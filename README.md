@@ -1,32 +1,171 @@
 # Agentic Financial Operations Intelligence Platform
 
-Multi-agent AI system for financial fraud and complaint investigation using FastAPI, LangGraph-style orchestration, PostgreSQL, RAG, and human approval.
+Django REST backend for multi-agent financial fraud and complaint investigations using LangChain, LangGraph, PostgreSQL, RAG, vector-style retrieval, and human approval workflows.
 
-## What This Includes
+## Tech Stack
 
-- FastAPI service with investigation and approval endpoints
-- Agent workflow for intake, evidence retrieval, fraud analysis, complaint analysis, decisioning, and human approval
-- PostgreSQL-ready SQLAlchemy models
-- RAG service abstraction with deterministic local retrieval and PostgreSQL vector retrieval
-- HMAC bearer-token auth with analyst, approver, and admin roles
-- Audit logging for case lifecycle actions
-- LLM provider boundary with local and OpenAI-compatible implementations
-- Lightweight dashboard at `/dashboard`
-- Alembic database migrations
-- Docker Compose for API and PostgreSQL
-- Pytest starter coverage for the main workflow
+- Backend: Django, Django REST Framework, modular app architecture
+- Database: PostgreSQL-ready Django models, JSON metadata, migration-managed schema
+- AI: LangChain runnables, LangGraph workflow orchestration, pluggable LLM service
+- RAG: knowledge document store with deterministic embeddings and vector similarity retrieval
+- Workflow: multi-step state graph for evidence retrieval, fraud analysis, complaint analysis, decisioning, and approval gating
+- Engineering: Docker, Docker Compose, `.env` setup, pytest, Ruff, generated OpenAPI docs
+
+
+## Architecture
+
+The backend is organized as a modular Django REST system with separate packages for platform configuration, investigation APIs, AI/RAG services, and workflow orchestration.
+
+```text
+Agentic Financial Operations Intelligence Platform
+├── config/                 # Django settings, ASGI/WSGI, root URLs, API docs config
+├── investigations/         # REST APIs, serializers, PostgreSQL models, migrations, admin
+├── ai/                     # RAG retriever, vector similarity, LLM provider boundary
+├── workflows/              # LangGraph multi-step investigation workflow
+├── tests/                  # API and workflow tests
+├── Dockerfile              # Production container image
+├── docker-compose.yml      # API + PostgreSQL local stack
+├── .env.example            # Environment variable template
+└── README.md               # Project documentation
+```
+
+### Component Responsibilities
+
+- `config`: central Django project configuration, installed apps, database setup, REST framework settings, and OpenAPI docs.
+- `investigations`: owns the domain model, API serializers, viewsets, approval endpoint, audit logs, and migrations.
+- `ai`: contains the retrieval and LLM abstraction layer. It supports local deterministic behavior and an OpenAI-compatible path.
+- `workflows`: contains the LangGraph state machine that coordinates evidence retrieval, specialist agents, decisioning, and approval gating.
+
+## Diagrams
+
+### System Architecture
+
+```mermaid
+flowchart LR
+    Client[Postman / API Client] --> DRF[Django REST API]
+    DRF --> Models[(PostgreSQL Models)]
+    DRF --> Workflow[LangGraph Workflow]
+    Workflow --> RAG[RAG Retriever]
+    RAG --> Knowledge[(KnowledgeDocument Vector Store)]
+    RAG --> LocalPolicy[Local Policy Fallback]
+    Workflow --> FraudAgent[Fraud Agent]
+    Workflow --> ComplaintAgent[Complaint Agent]
+    Workflow --> DecisionAgent[Decision Agent]
+    DecisionAgent --> LLM[LLM Service Boundary]
+    LLM --> LocalLLM[Local Summary]
+    LLM --> OpenAI[OpenAI-Compatible API]
+    Workflow --> ApprovalGate[Human Approval Gate]
+    ApprovalGate --> Models
+    DRF --> Audit[(AuditLog)]
+```
+
+### Investigation Workflow
+
+```mermaid
+stateDiagram-v2
+    [*] --> Received
+    Received --> RetrieveEvidence
+    RetrieveEvidence --> FraudAnalysis
+    FraudAnalysis --> ComplaintAnalysis
+    ComplaintAnalysis --> Decisioning
+    Decisioning --> ApprovalGate
+    ApprovalGate --> AwaitingApproval: high risk / refund / escalation
+    ApprovalGate --> Closed: low risk
+    AwaitingApproval --> Approved: reviewer approves
+    AwaitingApproval --> Rejected: reviewer rejects
+    Approved --> [*]
+    Rejected --> [*]
+    Closed --> [*]
+```
+
+### API Flow
+
+```mermaid
+sequenceDiagram
+    participant P as Postman
+    participant API as Django REST API
+    participant G as LangGraph
+    participant R as RAG
+    participant DB as PostgreSQL
+
+    P->>API: POST /api/cases/
+    API->>DB: Create case
+    API->>G: Run investigation workflow
+    G->>R: Retrieve evidence
+    R->>DB: Search KnowledgeDocument
+    G->>DB: Store evidence and findings
+    G->>DB: Update recommendation and status
+    API->>P: Return case response
+    P->>API: POST /api/cases/{id}/approval/
+    API->>DB: Store approval decision
+    API->>P: Return approved/rejected case
+```
+
+## Documentation
+
+### API Documentation
+
+Interactive OpenAPI documentation is generated by `drf-spectacular`:
+
+```text
+http://127.0.0.1:8000/api/docs/
+```
+
+Raw schema:
+
+```text
+http://127.0.0.1:8000/api/schema/
+```
+
+### Postman Testing Notes
+
+Use these endpoints in Postman:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health/` | Health check |
+| `POST` | `/api/cases/` | Create and run an investigation |
+| `GET` | `/api/cases/` | List investigations |
+| `GET` | `/api/cases/{case_id}/` | Retrieve one investigation |
+| `POST` | `/api/cases/{case_id}/approval/` | Approve or reject a case |
+| `GET` | `/api/schema/` | OpenAPI schema |
+| `GET` | `/api/docs/` | API docs |
+
+## Screenshots
+
+This is a backend-only project, so screenshots should show API tooling rather than a custom frontend. Suggested captures for your GitHub README are:
+
+| Screenshot | What to Capture | Suggested File |
+| --- | --- | --- |
+| API docs | `http://127.0.0.1:8000/api/docs/` showing available endpoints | `docs/screenshots/api-docs.png` |
+| Postman create case | Successful `POST /api/cases/` response | `docs/screenshots/postman-create-case.png` |
+| Postman approval | Successful `POST /api/cases/{case_id}/approval/` response | `docs/screenshots/postman-approval.png` |
+| Database/admin optional | Django admin or database rows for cases/evidence/findings | `docs/screenshots/database-records.png` |
+
+After adding image files, embed them like this:
+
+```md
+![API docs](docs/screenshots/api-docs.png)
+![Postman create case](docs/screenshots/postman-create-case.png)
+![Postman approval](docs/screenshots/postman-approval.png)
+```
 
 ## Quick Start
 
 ```bash
 cp .env.example .env
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn app.main:app --reload
+python manage.py migrate
+python manage.py runserver 0.0.0.0:8000
 ```
 
-API docs will be available at `http://127.0.0.1:8000/docs`.
+Open:
+
+- API docs: `http://127.0.0.1:8000/api/docs/`
+- Health: `http://127.0.0.1:8000/api/health/`
+- Django admin: `http://127.0.0.1:8000/admin/`
 
 ## Docker
 
@@ -34,88 +173,81 @@ API docs will be available at `http://127.0.0.1:8000/docs`.
 docker compose up --build
 ```
 
-## Core Flow
+## Main APIs
 
-1. A case is submitted through `POST /cases`.
-2. The workflow classifies the case and retrieves supporting policy or transaction evidence.
-3. Specialist agents assess fraud signals and complaint obligations.
-4. A decision agent recommends an action.
-5. High-risk or customer-impacting cases pause for human approval.
-6. An approver records a final decision through `POST /cases/{case_id}/approval`.
-
-## API
-
-### Login
+### Create Investigation Case
 
 ```http
-POST /auth/token
-```
-
-```json
-{
-  "email": "admin@example.com",
-  "password": "admin123"
-}
-```
-
-Use the returned token as `Authorization: Bearer <token>`. In development, anonymous requests are allowed as admin to keep local demos quick. Set `ENVIRONMENT=production` to require real tokens.
-
-
-### Create Case
-
-```http
-POST /cases
+POST /api/cases/
 ```
 
 ```json
 {
   "customer_id": "cust_123",
   "case_type": "fraud",
-  "summary": "Customer disputes three card transactions.",
-  "amount": 984.23,
+  "summary": "Customer reports unauthorized card dispute after stolen device.",
+  "amount": "1200.00",
   "currency": "USD",
   "channel": "mobile",
   "metadata": {
-    "merchant": "EXAMPLE STORE"
+    "device_mismatch": true,
+    "velocity_24h": 6
   }
 }
+```
+
+### List Cases
+
+```http
+GET /api/cases/
 ```
 
 ### Get Case
 
 ```http
-GET /cases/{case_id}
+GET /api/cases/{case_id}/
 ```
 
-### Approve Case
+### Human Approval
 
 ```http
-POST /cases/{case_id}/approval
+POST /api/cases/{case_id}/approval/
 ```
 
 ```json
 {
   "approved": true,
   "reviewer": "ops.lead@example.com",
-  "notes": "Evidence supports temporary credit and escalation."
+  "notes": "Evidence supports remediation and escalation."
 }
 ```
 
-## Development Notes
+## Workflow
 
-The default implementation uses local auth users, local LLM summaries, and deterministic RAG so the system is runnable without external services. For production-style behavior set:
+1. Case is created through Django REST.
+2. LangGraph moves state through retrieval, fraud agent, complaint agent, decision agent, and approval gate.
+3. RAG retrieves local policy evidence or documents from `KnowledgeDocument`.
+4. Agent findings are stored in PostgreSQL models.
+5. Decision output updates risk score, recommended action, rationale, and status.
+6. High-risk cases pause at `awaiting_approval` until a reviewer approves or rejects.
+
+## Environment
+
+Key variables:
 
 ```bash
-ENABLE_DATABASE=true
-ENVIRONMENT=production
-LLM_PROVIDER=openai
-RAG_BACKEND=postgres
+DATABASE_URL=postgresql://finops:finops@localhost:5432/finops
+HUMAN_APPROVAL_RISK_THRESHOLD=70
+LLM_PROVIDER=local
+OPENAI_API_KEY=
+VECTOR_BACKEND=postgres
 ```
 
-Then run migrations:
+Set `LLM_PROVIDER=openai` and provide `OPENAI_API_KEY` to use the OpenAI-compatible LLM client.
+
+## Tests
 
 ```bash
-alembic upgrade head
+python3 -m pytest
+python3 -m ruff check .
 ```
-
-See `deploy.example.md` for deployment notes.
