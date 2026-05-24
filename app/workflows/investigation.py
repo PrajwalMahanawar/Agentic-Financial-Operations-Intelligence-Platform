@@ -10,6 +10,7 @@ from app.models.case import (
     CaseType,
     RecommendationAction,
 )
+from app.services.llm import LLMService, LocalLLMService
 from app.services.rag import EvidenceRetriever
 
 try:
@@ -24,9 +25,15 @@ class InvestigationState(TypedDict):
 
 
 class InvestigationWorkflow:
-    def __init__(self, retriever: EvidenceRetriever, settings: Settings) -> None:
+    def __init__(
+        self,
+        retriever: EvidenceRetriever,
+        settings: Settings,
+        llm_service: LLMService | None = None,
+    ) -> None:
         self.retriever = retriever
         self.settings = settings
+        self.llm_service = llm_service or LocalLLMService()
         self.graph = self._build_graph()
 
     def run(self, case_request: CaseCreate) -> CaseRecord:
@@ -102,6 +109,18 @@ class InvestigationWorkflow:
             risk += 10
             signals.append("digital_channel")
 
+        if case.metadata.get("device_mismatch") is True:
+            risk += 20
+            signals.append("device_mismatch")
+
+        if case.metadata.get("velocity_24h", 0) >= 5:
+            risk += 20
+            signals.append("high_transaction_velocity")
+
+        if case.metadata.get("sanctions_hit") is True:
+            risk += 30
+            signals.append("sanctions_screening_hit")
+
         if case.case_type in {CaseType.fraud, CaseType.mixed}:
             risk += 15
             signals.append("fraud_case_type")
@@ -110,8 +129,9 @@ class InvestigationWorkflow:
             AgentFinding(
                 agent="fraud_investigator",
                 risk_score=min(risk, 100),
-                summary="Assessed transaction and customer narrative for fraud indicators.",
+                summary="Assessed transaction, customer narrative, device, velocity, and sanctions indicators.",
                 signals=signals,
+                explanation="Fraud risk combines amount, channel, narrative, device, velocity, and sanctions signals.",
             )
         )
         return state
@@ -144,6 +164,7 @@ class InvestigationWorkflow:
                 risk_score=min(risk, 100),
                 summary="Assessed complaint obligations, harm indicators, and remediation needs.",
                 signals=signals,
+                explanation="Complaint risk combines regulated complaint markers, customer harm, amount, and policy matches.",
             )
         )
         return state
@@ -169,7 +190,7 @@ class InvestigationWorkflow:
         case.recommendation = CaseRecommendation(
             action=action,
             risk_score=risk_score,
-            rationale=rationale,
+            rationale=f"{rationale} {self.llm_service.summarize_case(case)}",
             requires_human_approval=risk_score >= self.settings.human_approval_risk_threshold
             or action in {RecommendationAction.approve_refund, RecommendationAction.escalate},
         )

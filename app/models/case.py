@@ -50,6 +50,7 @@ class AgentFinding(BaseModel):
     risk_score: int = Field(ge=0, le=100)
     summary: str
     signals: list[str] = Field(default_factory=list)
+    explanation: str | None = None
 
 
 class CaseRecommendation(BaseModel):
@@ -91,3 +92,24 @@ class ApprovalRecord(BaseModel):
 
 
 CaseRecord.model_rebuild()
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    role: str
+
+
+class AuditRecord(BaseModel):
+    actor: str
+    action: str
+    resource_type: str
+    resource_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import InvestigationCase
@@ -11,6 +12,9 @@ class CaseRepository:
         raise NotImplementedError
 
     def get(self, case_id: str) -> CaseRecord | None:
+        raise NotImplementedError
+
+    def list_recent(self, limit: int = 25) -> list[CaseRecord]:
         raise NotImplementedError
 
 
@@ -25,6 +29,9 @@ class InMemoryCaseRepository(CaseRepository):
 
     def get(self, case_id: str) -> CaseRecord | None:
         return self._cases.get(case_id)
+
+    def list_recent(self, limit: int = 25) -> list[CaseRecord]:
+        return sorted(self._cases.values(), key=lambda case: case.updated_at, reverse=True)[:limit]
 
 
 class SqlAlchemyCaseRepository(CaseRepository):
@@ -64,3 +71,9 @@ class SqlAlchemyCaseRepository(CaseRepository):
         if row is None:
             return None
         return CaseRecord.model_validate(row.payload)
+
+    def list_recent(self, limit: int = 25) -> list[CaseRecord]:
+        rows = self.db.scalars(
+            select(InvestigationCase).order_by(InvestigationCase.updated_at.desc()).limit(limit)
+        ).all()
+        return [CaseRecord.model_validate(row.payload) for row in rows]
